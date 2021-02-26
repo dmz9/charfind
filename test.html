@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <style>
+        canvas {
+            outline: 1px solid black;
+            background-color: #ccc;
+        }
+
+        #progress {
+            background-color: #000;
+            height: 10px;
+            width: 0;
+            float: left;
+        }
+
+        table {
+            width: 70%;
+            margin: auto;
+        }
+
+        td, th {
+            outline: 1px solid #ccc;
+            padding: 20px;
+        }
+
+        th {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+<table>
+    <tr>
+        <td colspan="3">
+            <div id="progress"></div>
+        </td>
+    </tr>
+    <tr>
+        <td><input type="text" id="char" maxlength="1"></td>
+        <td><select name="font" id="font">
+            <option value="monospace">monospace</option>
+        </select></td>
+        <td>
+            <button id="clicky">ok</button>
+        </td>
+    </tr>
+    <tr>
+        <td colspan="3">
+            <canvas id="kan"></canvas>
+        </td>
+    </tr>
+</table>
+
+<div id="result"></div>
+<script>
+    const CW = 120
+    const CH = 120
+    const lim = 1000
+    const iterationPerFrame = 50
+    /**
+     * @type {HTMLCanvasElement}
+     */
+    var kan = document.getElementById('kan')
+    kan.width = CW
+    kan.height = CH
+    var progress = document.getElementById('progress')
+    /**
+     * @type {CanvasRenderingContext2D}
+     */
+    var d2 = kan.getContext('2d', {antialias: true})
+    /**
+     * @type {HTMLInputElement}
+     */
+    var inp = document.getElementById('char')
+    /**
+     * @type {HTMLSelectElement}
+     */
+    var sel = document.getElementById('font')
+    /**
+     * @param current {Uint8ClampedArray}
+     * @param origin {Uint8ClampedArray}
+     */
+    const evalParrots = (current, origin) => {
+        return current
+            .map((v, i) => Math.abs(v - origin[i]))
+            .filter(v => v > 0)
+            .length
+    }
+
+    const getChar = () => {
+        var char = inp.value.toString()
+        if (!char.length) {
+            throw Error
+        }
+        return char
+    }
+
+    const getFont = () => {
+        var font = sel.value.toString()
+        if (!font.length) {
+            throw Error
+        }
+        return `100px ${font}`
+    }
+
+    const drawChar = (d2, char) => {
+        d2.clearRect(0, 0, CW, CH)
+        d2.fillText(char, 30, CH - 30)
+        return d2.getImageData(0, 0, CW, CH).data
+    }
+
+    const drawResult = (result, originParrots, d2, char, time) => {
+        /**
+         * @type {HTMLTableElement}
+         */
+        var table = document.createElement('table')
+        var thr = document.createElement('tr')
+        var th1 = document.createElement('th')
+        var th2 = document.createElement('th')
+        var th3 = document.createElement('th')
+        var th4 = document.createElement('th')
+        th1.innerHTML = 'визуальный дифф'
+        th2.innerHTML = 'начертание'
+        th3.innerHTML = 'порядковый номер'
+        th4.innerHTML = 'отличие, в попугаях'
+        thr.append(th1, th2, th3, th4)
+        table.append(thr)
+        table.style.fontFamily = sel.value.toString()
+        table.style.fontSize = '100px'
+        var rez = document.getElementById('result')
+        rez.innerHTML = ''
+        rez.append(table)
+        var tr = document.createElement('tr')
+        var td1 = document.createElement('td')
+        td1.colSpan = 4
+        td1.innerHTML = `${originParrots} pixels; ${performance.now() - time} ms`
+        table.append(tr)
+        tr.append(td1)
+        d2.globalAlpha = .5
+        d2.fillStyle = 'red'
+        var kan2 = document.createElement('canvas')
+        var dd2 = kan2.getContext('2d')
+        dd2.globalAlpha = .5
+        dd2.fillStyle = 'green'
+        dd2.font = getFont()
+        result.forEach(v => {
+            /**
+             * @type {HTMLTableRowElement}
+             */
+            var tr = document.createElement('tr')
+            var td1 = document.createElement('td')
+            var td2 = document.createElement('td')
+            var td3 = document.createElement('td')
+            var td4 = document.createElement('td')
+            var c = document.createElement('canvas')
+
+            drawChar(dd2, v[0])
+            drawChar(d2, char)
+            c.width = CW
+            c.height = CH
+            var ctx = c.getContext('2d')
+            ctx.drawImage(kan, 0, 0)
+            ctx.drawImage(kan2, 0, 0)
+
+            td2.innerText = `${char} ${v[0]}`
+            td3.innerText = `@${v[0].charCodeAt(0)}`
+            td4.innerText = `${Math.floor(100 * v[1] / originParrots)}`
+
+            td1.append(c)
+            tr.append(td1, td2, td3, td4)
+            table.append(tr)
+        })
+    }
+    document.getElementById('clicky').addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        var time = performance.now()
+        const char = getChar()
+        d2.font = getFont()
+        d2.fillStyle = 'black'
+        /**
+         * @type {Uint8ClampedArray}
+         */
+        var origin = drawChar(d2, char)
+        var originParrots = origin.filter(something => something > 0).length
+
+        const reduce = (i, next, result) => {
+            for (var k = 0; k < iterationPerFrame; k++) {
+                if (i < 0) return next(result)
+                result[i] = [
+                    String.fromCharCode(i),
+                    evalParrots(
+                        drawChar(d2, String.fromCharCode(i)),
+                        origin
+                    )
+                ]
+                i--
+                progress.style.width = `${100 * (1 - i / lim)}%`
+            }
+            window.requestAnimationFrame(() => {
+                reduce(i, next, result)
+            })
+        }
+
+        reduce(lim, (result) => {
+            drawResult(
+                result
+                    .filter(v => v[1] < originParrots)
+                    .sort((a, b) => a[1] - b[1])
+                    .slice(0, 100),
+                originParrots,
+                d2,
+                char,
+                time
+            )
+        }, Array(lim))
+    })
+</script>
+</body>
+</html>
